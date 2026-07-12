@@ -18,6 +18,11 @@ async function listActive(req, res) {
   res.json({ bookings: rows });
 }
 
+async function listMine(req, res) {
+  const rows = await bookingService.listMyBookings(req.user.userId);
+  res.json({ bookings: rows });
+}
+
 async function listReminders(req, res) {
   const rows = await bookingService.listUpcomingReminders();
   res.json({ bookings: rows });
@@ -55,4 +60,4 @@ async function cancel(req, res) {
   }
 }
 
-module.exports = { listForAsset, listActive, listReminders, create, cancel };
+module.exports = { listForAsset, listActive, listMine, listReminders, create, cancel };

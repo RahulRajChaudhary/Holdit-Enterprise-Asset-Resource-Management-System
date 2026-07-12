@@ -10,6 +10,11 @@ export async function listActiveBookings() {
   return data.bookings;
 }
 
+export async function listMyBookings() {
+  const { data } = await client.get('/bookings/mine');
+  return data.bookings;
+}
+
 export async function listBookingReminders() {
   const { data } = await client.get('/bookings/reminders');
   return data.bookings;

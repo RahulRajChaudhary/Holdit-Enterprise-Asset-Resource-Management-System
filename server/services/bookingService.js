@@ -50,6 +50,19 @@ async function listActiveBookings() {
   return result.rows.map((r) => ({ ...r, display_status: computeDisplayStatus(r) }));
 }
 
+async function listMyBookings(userId) {
+  const result = await pool.query(
+    `SELECT ${BOOKING_SELECT}
+       FROM bookings b
+       JOIN assets a ON a.id = b.asset_id
+       JOIN users u ON u.id = b.booked_by
+      WHERE b.booked_by = $1
+      ORDER BY b.start_time DESC`,
+    [userId]
+  );
+  return result.rows.map((r) => ({ ...r, display_status: computeDisplayStatus(r) }));
+}
+
 async function listUpcomingReminders(withinMinutes = 60) {
   const result = await pool.query(
     `SELECT ${BOOKING_SELECT}
@@ -139,6 +152,7 @@ async function cancelBooking(id, actorId) {
 module.exports = {
   listBookingsForAsset,
   listActiveBookings,
+  listMyBookings,
   listUpcomingReminders,
   createBooking,
   cancelBooking,

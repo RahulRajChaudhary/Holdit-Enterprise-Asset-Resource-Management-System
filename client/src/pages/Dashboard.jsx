@@ -13,7 +13,8 @@ import {
   listDepartmentAllocations,
   requestReturn,
 } from '../api/allocations';
-import { listActiveBookings } from '../api/bookings';
+import { listActiveBookings, listMyBookings, cancelBooking } from '../api/bookings';
+import StatusBadge from '../components/StatusBadge';
 import { countActiveMaintenance } from '../api/maintenance';
 
 function KpiTile({ label, value, soon }) {
@@ -219,6 +220,71 @@ function MyAssetsCard() {
   );
 }
 
+function MyBookingsCard() {
+  const [bookings, setBookings] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [cancellingId, setCancellingId] = useState(null);
+
+  function refresh() {
+    listMyBookings()
+      .then(setBookings)
+      .catch(() => setLoadError('Could not load your bookings.'));
+  }
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  async function handleCancel(id) {
+    setCancellingId(id);
+    try {
+      await cancelBooking(id);
+      refresh();
+    } catch (err) {
+      setLoadError(err.response?.data?.message || 'Could not cancel this booking.');
+    } finally {
+      setCancellingId(null);
+    }
+  }
+
+  if (loadError) return <p className="text-sm text-status-overdue">{loadError}</p>;
+  if (!bookings) return null;
+
+  const upcoming = bookings.filter((b) => ['UPCOMING', 'ONGOING'].includes(b.display_status));
+  if (upcoming.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <p className="text-sm font-medium text-gray-900">My bookings</p>
+      <ul className="mt-3 divide-y divide-gray-100">
+        {upcoming.map((b) => (
+          <li key={b.id} className="flex items-center justify-between py-2.5 text-sm">
+            <div>
+              <Link to={`/assets/${b.asset_id}`} className="text-gray-900 hover:text-accent-700">
+                {b.asset_tag} — {b.asset_name}
+              </Link>
+              <p className="text-xs text-gray-500">
+                {new Date(b.start_time).toLocaleString()} → {new Date(b.end_time).toLocaleString()}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <StatusBadge status={b.display_status} />
+              <button
+                type="button"
+                disabled={cancellingId === b.id}
+                onClick={() => handleCancel(b.id)}
+                className="text-xs font-medium text-gray-400 hover:text-status-overdue disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function DepartmentAssetsCard() {
   const [allocations, setAllocations] = useState(null);
   const [loadError, setLoadError] = useState('');
@@ -273,6 +339,7 @@ function Dashboard() {
 
         {user.role === 'ADMIN' && <AdminOrgSetup />}
         <MyAssetsCard />
+        <MyBookingsCard />
         {user.role === 'DEPARTMENT_HEAD' && <DepartmentAssetsCard />}
       </div>
     </AppShell>
