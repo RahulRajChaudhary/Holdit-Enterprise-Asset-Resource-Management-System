@@ -2,6 +2,16 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
+const departmentRoutes = require('./routes/departmentRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
+const employeeRoutes = require('./routes/employeeRoutes');
+const assetRoutes = require('./routes/assetRoutes');
+const allocationRoutes = require('./routes/allocationRoutes');
+const bookingRoutes = require('./routes/bookingRoutes');
+const maintenanceRoutes = require('./routes/maintenanceRoutes');
+const auditRoutes = require('./routes/auditRoutes');
+const activityLogRoutes = require('./routes/activityLogRoutes');
+const reportRoutes = require('./routes/reportRoutes');
 
 const app = express();
 
@@ -13,6 +23,16 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/employees', employeeRoutes);
+app.use('/api/assets', assetRoutes);
+app.use('/api/allocations', allocationRoutes);
+app.use('/api/bookings', bookingRoutes);
+app.use('/api/maintenance', maintenanceRoutes);
+app.use('/api/audits', auditRoutes);
+app.use('/api/activity-logs', activityLogRoutes);
+app.use('/api/reports', reportRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
