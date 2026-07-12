@@ -13,13 +13,6 @@ build/
 .vite/
 *.local
 
-# Prisma generated client (if generated separately from schema)
-generated/
-.claude/
-CLAUDE.md
-HOLDIT_BUILD_PLAN.md
-docs/AssetFlow*
-
 # Editor / OS
 .DS_Store
 .vscode/*
@@ -39,3 +32,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+
+generated/
+.claude/
+CLAUDE.md
+HOLDIT_BUILD_PLAN.md
+docs/AssetFlow*
