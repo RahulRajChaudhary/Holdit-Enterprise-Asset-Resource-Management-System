@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  /* Holdit accent — deep teal, "hold/keep" identity */
+  --color-accent-50: #e6f3f0;
+  --color-accent-100: #cce7e1;
+  --color-accent-500: #0f6e56;
+  --color-accent-600: #0c5945;
+  --color-accent-700: #094433;
+
+  /* Status colors — used identically across tables, kanban, calendar, dashboard */
+  --color-status-available: #16a34a;
+  --color-status-allocated: #2563eb;
+  --color-status-reserved: #7c3aed;
+  --color-status-maintenance: #d97706;
+  --color-status-overdue: #dc2626;
+  --color-status-lost: #6b7280;
+
+  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #fafafa;
+  color: #111827;
+}
+
+#root {
+  min-height: 100svh;
+}
