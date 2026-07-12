@@ -61,7 +61,7 @@ the dashboard surfacing it all in real time.
 | Drag and drop | dnd-kit |
 | Charts | Recharts |
 | Backend | Node.js + Express |
-| Database | PostgreSQL + Prisma ORM |
+| Database | PostgreSQL, raw SQL (`pg` driver, no ORM) |
 | Auth | bcrypt password hashing + JWT, custom RBAC middleware |
 
 No third-party backend-as-a-service (no Firebase, Supabase, or Mongo) and no
@@ -81,14 +81,17 @@ instance.
 - **Resource booking** — time-slot booking of shared/limited resources with
   overlap validation and a calendar view
 - **Maintenance management** — repair requests routed through an approval
-  workflow before work begins, presented as a drag-and-drop kanban board
+  workflow before work begins, presented as a kanban board (drag-and-drop
+  interaction is planned; current build advances cards via click actions)
 - **Audit cycles** — scoped verification cycles with assigned auditors,
   auto-generated discrepancy reports, and cycle closing that updates asset
   statuses
 - **Dashboard and reports** — live KPIs, overdue alerts, utilization and
   maintenance-frequency analytics, CSV export
 - **Notifications and activity log** — every assignment, approval, booking,
-  and discrepancy tracked and surfaced without digging
+  and discrepancy tracked in the activity log; the notifications feed is
+  composed from that log plus live overdue-allocation and booking-reminder
+  queries, rather than a separately stored notification record
 
 ## User roles and permissions
 
@@ -137,28 +140,40 @@ pickup, rather than jumping straight to Allocated.
 
 ## Database design
 
-Local PostgreSQL, modeled with Prisma. Key tables: `users`, `departments`,
-`asset_categories`, `assets`, `allocations`, `transfer_requests`, `bookings`,
-`maintenance_requests`, `audit_cycles`, `audit_items`, `activity_logs`,
-`notifications`.
+Local PostgreSQL, modeled with hand-written SQL migrations
+(`server/db/schema.sql`, applied via `npm run migrate`) — no ORM. Key tables:
+`users`, `departments`, `asset_categories`, `assets`, `allocations`,
+`transfer_requests`, `bookings`, `maintenance_requests`, `audit_cycles`,
+`audit_cycle_auditors`, `audit_items`, `activity_logs`.
 
-**Entity-relationship diagram:** `docs/holdit-erd.png` — generated from the
-live Prisma schema (`npx prisma-erd-generator` or equivalent).
+**Entity-relationship diagram:** `docs/holdit-erd.png` — drawn from the
+`schema.sql` structure.
 
 ### Enforced at the database level, not just the API
 
 - `UNIQUE` constraint on `asset_tag` and `email`
 - Partial unique index allowing only one active allocation per asset:
   ```sql
-  CREATE UNIQUE INDEX one_active_allocation
-  ON allocations(asset_id) WHERE status = 'active';
+  CREATE UNIQUE INDEX idx_allocations_one_active_per_asset
+  ON allocations(asset_id) WHERE status = 'ACTIVE';
   ```
-- Booking inserts run inside a transaction alongside the overlap check, so a
-  race condition can't create two overlapping bookings even under concurrent
-  requests
-- Indexes on `assets(status)`, `allocations(expected_return_date)`, and
-  `bookings(asset_id, start_time)` for the queries the dashboard and booking
-  calendar run most often
+- Booking overlap is enforced with a `GIST` exclusion constraint (via
+  `btree_gist`), not just an application-side check, so two overlapping
+  confirmed bookings for the same asset can never both commit — even under
+  concurrent requests:
+  ```sql
+  ALTER TABLE bookings ADD CONSTRAINT bookings_no_overlap
+    EXCLUDE USING gist (
+      asset_id WITH =,
+      tstzrange(start_time, end_time) WITH &&
+    ) WHERE (status = 'CONFIRMED');
+  ```
+  The service layer checks for conflicts first (for a fast, specific error
+  message); the constraint is the backstop that guarantees correctness even
+  if two requests race.
+- Indexes on `assets(status)`, `allocations(asset_id)`, and
+  `bookings(asset_id)` for the queries the dashboard and booking calendar run
+  most often
 
 ## Getting started
 
@@ -177,7 +192,7 @@ cd holdit
 cd server
 npm install
 cp .env.example .env   # fill in DATABASE_URL and JWT_SECRET
-npx prisma migrate dev
+npm run migrate         # applies server/db/schema.sql
 npm run seed            # loads demo accounts and sample data
 npm run dev
 
@@ -211,18 +226,18 @@ Seeded automatically by `npm run seed`, all using the password `Demo@123`:
 ```
 holdit/
 ├── server/
-│   ├── models/
 │   ├── routes/
 │   ├── controllers/
 │   ├── services/       # business rules: conflict checks, overlap checks,
 │   │                    # status transitions — kept out of route handlers
-│   ├── middleware/      # auth, RBAC, validation
-│   └── prisma/
+│   ├── middleware/      # auth, RBAC
+│   └── db/               # schema.sql, migrate.js, seed.js, pool.js
 ├── client/
-│   ├── pages/
-│   ├── components/
-│   ├── hooks/
-│   └── api/
+│   └── src/
+│       ├── pages/
+│       ├── components/
+│       ├── hooks/
+│       └── api/
 └── docs/
     ├── holdit-system-workflow.png
     ├── holdit-asset-lifecycle.png
@@ -272,8 +287,8 @@ Deliberate scope decisions made for an 8-hour solo build, not oversights:
    it, offers a Transfer Request; approve it and watch the history update
 5. Book a resource for 9:00–10:00, then try 9:30–10:30 — rejected; try
    10:00–11:00 — accepted
-6. Drag a maintenance card from Pending to Approved — the asset's status
-   flips to Under Maintenance live; drag it to Resolved — back to Available
+6. Advance a maintenance card from Pending to Approved — the asset's status
+   flips to Under Maintenance live; advance it to Resolved — back to Available
 7. Mark an asset Missing in an audit cycle and close the cycle — it becomes
    Lost
 8. Return to the dashboard — every KPI, notification, and log entry reflects
