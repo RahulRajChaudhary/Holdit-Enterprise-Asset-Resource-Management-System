@@ -6,7 +6,7 @@ import StatusBadge from '../../components/StatusBadge';
 import { useAuth } from '../../hooks/useAuth';
 import { getAsset, updateAsset } from '../../api/assets';
 import { listCategories } from '../../api/categories';
-import { listAllocationsForAsset } from '../../api/allocations';
+import { listAllocationsForAsset, requestReturn } from '../../api/allocations';
 import { listMaintenanceForAsset } from '../../api/maintenance';
 
 function holderLabel(row) {
@@ -46,6 +46,8 @@ function AssetDetail() {
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
   const [statusError, setStatusError] = useState('');
+  const [returnRequestError, setReturnRequestError] = useState('');
+  const [requestingReturn, setRequestingReturn] = useState(false);
 
   async function refresh() {
     try {
@@ -114,6 +116,20 @@ function AssetDetail() {
       setAsset(updated);
     } catch (err) {
       setStatusError(err.response?.data?.message || 'Could not change the status.');
+    }
+  }
+
+  async function handleRequestReturn() {
+    setReturnRequestError('');
+    setRequestingReturn(true);
+    try {
+      await requestReturn(id);
+      const updated = await listAllocationsForAsset(id);
+      setAllocations(updated);
+    } catch (err) {
+      setReturnRequestError(err.response?.data?.message || 'Could not request a return for this asset.');
+    } finally {
+      setRequestingReturn(false);
     }
   }
 
@@ -281,20 +297,41 @@ function AssetDetail() {
               <p className="mt-2 text-sm text-gray-500">No allocations recorded yet.</p>
             ) : (
               <ul className="mt-3 divide-y divide-gray-100">
-                {allocations.map((a) => (
-                  <li key={a.id} className="py-2.5 text-sm">
-                    <p className="text-gray-900">
-                      {holderLabel(a)} — {a.status === 'ACTIVE' ? 'currently holding' : 'returned'}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Allocated {new Date(a.allocated_at).toLocaleDateString()}
-                      {a.expected_return_date && ` · due ${new Date(a.expected_return_date).toLocaleDateString()}`}
-                      {a.returned_at && ` · returned ${new Date(a.returned_at).toLocaleDateString()}`}
-                    </p>
-                  </li>
-                ))}
+                {allocations.map((a) => {
+                  const isCurrentHolder =
+                    a.status === 'ACTIVE' && a.holder_type === 'EMPLOYEE' && a.employee_id === user?.id;
+                  return (
+                    <li key={a.id} className="py-2.5 text-sm">
+                      <p className="text-gray-900">
+                        {holderLabel(a)} — {a.status === 'ACTIVE' ? 'currently holding' : 'returned'}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Allocated {new Date(a.allocated_at).toLocaleDateString()}
+                        {a.expected_return_date && ` · due ${new Date(a.expected_return_date).toLocaleDateString()}`}
+                        {a.returned_at && ` · returned ${new Date(a.returned_at).toLocaleDateString()}`}
+                      </p>
+                      {isCurrentHolder && a.return_requested_at && (
+                        <p className="mt-1 text-xs font-medium text-status-reserved">
+                          Return requested {new Date(a.return_requested_at).toLocaleDateString()} — awaiting
+                          pickup by an Asset Manager.
+                        </p>
+                      )}
+                      {isCurrentHolder && !a.return_requested_at && (
+                        <button
+                          type="button"
+                          disabled={requestingReturn}
+                          onClick={handleRequestReturn}
+                          className="mt-1 text-xs font-medium text-accent-600 hover:text-accent-700 disabled:opacity-50"
+                        >
+                          {requestingReturn ? 'Requesting…' : 'Request return'}
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
+            {returnRequestError && <p className="mt-2 text-xs text-status-overdue">{returnRequestError}</p>}
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-white p-6">

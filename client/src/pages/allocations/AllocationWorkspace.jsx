@@ -330,6 +330,12 @@ function AllocationWorkspace() {
           {asset && asset.status === 'ALLOCATED' && canManage && (
             <form onSubmit={handleReturn} className="rounded-xl border border-gray-200 bg-white p-4">
               <p className="text-sm font-medium text-gray-900">Mark returned</p>
+              {history.find((h) => h.status === 'ACTIVE')?.return_requested_at && (
+                <p className="mt-1 text-xs font-medium text-status-reserved">
+                  {holderLabel(history.find((h) => h.status === 'ACTIVE'))} requested this return on{' '}
+                  {new Date(history.find((h) => h.status === 'ACTIVE').return_requested_at).toLocaleDateString()}.
+                </p>
+              )}
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-gray-500">Condition check-in</label>

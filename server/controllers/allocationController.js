@@ -52,6 +52,42 @@ async function returnAsset(req, res) {
   }
 }
 
+async function myAllocations(req, res) {
+  const allocations = await allocationService.listMyAllocations(req.user.userId);
+  res.json({ allocations });
+}
+
+async function departmentAllocations(req, res) {
+  try {
+    const allocations = await allocationService.listAllocationsForMyDepartment(req.user.userId);
+    res.json({ allocations });
+  } catch (err) {
+    if (handleAllocationError(err, res)) return;
+    throw err;
+  }
+}
+
+async function requestReturn(req, res) {
+  const { assetId } = req.body;
+
+  if (!assetId) {
+    return res.status(400).json({ field: 'assetId', message: 'Select an asset to request a return for.' });
+  }
+
+  try {
+    const allocation = await allocationService.requestReturn({ assetId, requestedBy: req.user.userId });
+    res.json({ allocation });
+  } catch (err) {
+    if (handleAllocationError(err, res)) return;
+    throw err;
+  }
+}
+
+async function listReturnRequests(req, res) {
+  const allocations = await allocationService.listReturnRequests();
+  res.json({ allocations });
+}
+
 async function requestTransfer(req, res) {
   const { assetId, toEmployeeId, toDepartmentId, reason } = req.body;
 
@@ -112,8 +148,12 @@ async function upcomingReturns(req, res) {
 
 module.exports = {
   listForAsset,
+  myAllocations,
+  departmentAllocations,
   allocate,
   returnAsset,
+  requestReturn,
+  listReturnRequests,
   requestTransfer,
   listTransferRequests,
   decideTransfer,

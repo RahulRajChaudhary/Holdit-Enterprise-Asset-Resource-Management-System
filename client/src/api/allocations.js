@@ -15,6 +15,26 @@ export async function returnAsset(payload) {
   return data.asset;
 }
 
+export async function listMyAllocations() {
+  const { data } = await client.get('/allocations/mine');
+  return data.allocations;
+}
+
+export async function listDepartmentAllocations() {
+  const { data } = await client.get('/allocations/department');
+  return data.allocations;
+}
+
+export async function requestReturn(assetId) {
+  const { data } = await client.post('/allocations/request-return', { assetId });
+  return data.allocation;
+}
+
+export async function listReturnRequests() {
+  const { data } = await client.get('/allocations/return-requests');
+  return data.allocations;
+}
+
 export async function requestTransfer(payload) {
   const { data } = await client.post('/allocations/transfer-requests', payload);
   return data.request;

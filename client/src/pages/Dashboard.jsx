@@ -5,7 +5,14 @@ import AppShell from '../components/AppShell';
 import { listAssets } from '../api/assets';
 import { listDepartments } from '../api/departments';
 import { listEmployees } from '../api/employees';
-import { listOverdueAllocations, listUpcomingReturns, listTransferRequests } from '../api/allocations';
+import {
+  listOverdueAllocations,
+  listUpcomingReturns,
+  listTransferRequests,
+  listMyAllocations,
+  listDepartmentAllocations,
+  requestReturn,
+} from '../api/allocations';
 import { listActiveBookings } from '../api/bookings';
 import { countActiveMaintenance } from '../api/maintenance';
 
@@ -149,6 +156,106 @@ function AdminOrgSetup() {
   );
 }
 
+function MyAssetsCard() {
+  const [allocations, setAllocations] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [requestingId, setRequestingId] = useState(null);
+
+  function refresh() {
+    listMyAllocations()
+      .then(setAllocations)
+      .catch(() => setLoadError('Could not load your allocated assets.'));
+  }
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  async function handleRequestReturn(assetId) {
+    setRequestingId(assetId);
+    try {
+      await requestReturn(assetId);
+      refresh();
+    } catch (err) {
+      setLoadError(err.response?.data?.message || 'Could not request a return for this asset.');
+    } finally {
+      setRequestingId(null);
+    }
+  }
+
+  if (loadError) return <p className="text-sm text-status-overdue">{loadError}</p>;
+  if (!allocations || allocations.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <p className="text-sm font-medium text-gray-900">Assets allocated to me</p>
+      <ul className="mt-3 divide-y divide-gray-100">
+        {allocations.map((a) => (
+          <li key={a.id} className="flex items-center justify-between py-2.5 text-sm">
+            <div>
+              <Link to={`/assets/${a.asset_id}`} className="text-gray-900 hover:text-accent-700">
+                {a.asset_tag} — {a.asset_name}
+              </Link>
+              {a.expected_return_date && (
+                <p className="text-xs text-gray-500">Due {new Date(a.expected_return_date).toLocaleDateString()}</p>
+              )}
+            </div>
+            {a.return_requested_at ? (
+              <span className="text-xs font-medium text-status-reserved">Return requested</span>
+            ) : (
+              <button
+                type="button"
+                disabled={requestingId === a.asset_id}
+                onClick={() => handleRequestReturn(a.asset_id)}
+                className="text-xs font-medium text-accent-600 hover:text-accent-700 disabled:opacity-50"
+              >
+                Request return
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function DepartmentAssetsCard() {
+  const [allocations, setAllocations] = useState(null);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    listDepartmentAllocations()
+      .then(setAllocations)
+      .catch(() => setLoadError('Could not load department assets.'));
+  }, []);
+
+  if (loadError) return <p className="text-sm text-status-overdue">{loadError}</p>;
+  if (!allocations) return null;
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <p className="text-sm font-medium text-gray-900">Assets allocated within my department</p>
+      {allocations.length === 0 ? (
+        <p className="mt-2 text-sm text-gray-500">No assets currently allocated in your department.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-gray-100">
+          {allocations.map((a) => (
+            <li key={a.id} className="py-2.5 text-sm">
+              <Link to={`/assets/${a.asset_id}`} className="text-gray-900 hover:text-accent-700">
+                {a.asset_tag} — {a.asset_name}
+              </Link>
+              <p className="text-xs text-gray-500">
+                Held by {a.holder_type === 'EMPLOYEE' ? a.employee_name : `${a.department_name} (dept)`}
+                {a.expected_return_date && ` · due ${new Date(a.expected_return_date).toLocaleDateString()}`}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function Dashboard() {
   const { user } = useAuth();
 
@@ -165,6 +272,8 @@ function Dashboard() {
         </div>
 
         {user.role === 'ADMIN' && <AdminOrgSetup />}
+        <MyAssetsCard />
+        {user.role === 'DEPARTMENT_HEAD' && <DepartmentAssetsCard />}
       </div>
     </AppShell>
   );

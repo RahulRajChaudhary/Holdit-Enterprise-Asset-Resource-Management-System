@@ -9,7 +9,7 @@ const RETURN_CONDITIONS = ['NEW', 'GOOD', 'FAIR', 'DAMAGED'];
 const ALLOCATION_SELECT = `
   al.id, al.asset_id, al.holder_type, al.employee_id, al.department_id,
   al.expected_return_date, al.status, al.allocated_at, al.returned_at,
-  al.return_condition, al.return_notes,
+  al.return_condition, al.return_notes, al.return_requested_at, al.return_requested_by,
   emp.name AS employee_name, dept.name AS department_name
 `;
 
@@ -154,7 +154,8 @@ async function returnAsset({ assetId, condition, notes, actorId }) {
     await client.query('BEGIN');
     await client.query(
       `UPDATE allocations
-          SET status = 'RETURNED', returned_at = now(), return_condition = $1, return_notes = $2, updated_at = now()
+          SET status = 'RETURNED', returned_at = now(), return_condition = $1, return_notes = $2,
+              return_requested_at = NULL, return_requested_by = NULL, updated_at = now()
         WHERE id = $3`,
       [condition || null, notes || null, active.id]
     );
@@ -178,6 +179,85 @@ async function returnAsset({ assetId, condition, notes, actorId }) {
     message: `Asset returned by ${holderLabel(active)}${condition ? ` (condition: ${condition})` : ''}.`,
   });
   return getAssetOrThrow(assetId);
+}
+
+async function listMyAllocations(employeeId) {
+  const result = await pool.query(
+    `SELECT ${ALLOCATION_SELECT}, a.asset_tag, a.name AS asset_name, a.status AS asset_status
+       FROM allocations al
+       JOIN assets a ON a.id = al.asset_id
+       LEFT JOIN users emp ON emp.id = al.employee_id
+       LEFT JOIN departments dept ON dept.id = al.department_id
+      WHERE al.status = 'ACTIVE' AND al.holder_type = 'EMPLOYEE' AND al.employee_id = $1
+      ORDER BY al.allocated_at DESC`,
+    [employeeId]
+  );
+  return result.rows;
+}
+
+async function listAllocationsForMyDepartment(userId) {
+  const requester = await pool.query('SELECT department_id FROM users WHERE id = $1', [userId]);
+  const departmentId = requester.rows[0]?.department_id;
+  if (!departmentId) {
+    throw new AllocationError('Your account is not assigned to a department.');
+  }
+
+  const result = await pool.query(
+    `SELECT ${ALLOCATION_SELECT}, a.asset_tag, a.name AS asset_name, a.status AS asset_status
+       FROM allocations al
+       JOIN assets a ON a.id = al.asset_id
+       LEFT JOIN users emp ON emp.id = al.employee_id
+       LEFT JOIN departments dept ON dept.id = al.department_id
+      WHERE al.status = 'ACTIVE'
+        AND (
+          (al.holder_type = 'EMPLOYEE' AND emp.department_id = $1) OR
+          (al.holder_type = 'DEPARTMENT' AND al.department_id = $1)
+        )
+      ORDER BY al.allocated_at DESC`,
+    [departmentId]
+  );
+  return result.rows;
+}
+
+async function requestReturn({ assetId, requestedBy }) {
+  const active = await getActiveAllocation(assetId);
+  if (!active) {
+    throw new AllocationError("This asset isn't currently allocated, so there's nothing to return.");
+  }
+  if (active.holder_type !== 'EMPLOYEE' || active.employee_id !== requestedBy) {
+    throw new AllocationError('You can only request a return for an asset allocated to you.');
+  }
+  if (active.return_requested_at) {
+    throw new AllocationError('A return has already been requested for this asset.');
+  }
+
+  await pool.query(
+    `UPDATE allocations SET return_requested_at = now(), return_requested_by = $1, updated_at = now() WHERE id = $2`,
+    [requestedBy, active.id]
+  );
+
+  const updated = await getActiveAllocation(assetId);
+  await activityLogService.log({
+    actorId: requestedBy,
+    action: 'RETURN_REQUESTED',
+    entityType: 'asset',
+    entityId: assetId,
+    message: `${holderLabel(updated)} requested a return for this asset.`,
+  });
+  return updated;
+}
+
+async function listReturnRequests() {
+  const result = await pool.query(
+    `SELECT ${ALLOCATION_SELECT}, a.asset_tag, a.name AS asset_name
+       FROM allocations al
+       JOIN assets a ON a.id = al.asset_id
+       LEFT JOIN users emp ON emp.id = al.employee_id
+       LEFT JOIN departments dept ON dept.id = al.department_id
+      WHERE al.status = 'ACTIVE' AND al.return_requested_at IS NOT NULL
+      ORDER BY al.return_requested_at`
+  );
+  return result.rows;
 }
 
 async function requestTransfer({ assetId, toEmployeeId, toDepartmentId, reason, requestedBy }) {
@@ -259,6 +339,20 @@ async function decideTransfer({ id, decision, decidedBy }) {
     throw new AllocationError('This transfer request has already been decided.');
   }
 
+  const decider = await pool.query('SELECT role, department_id FROM users WHERE id = $1', [decidedBy]);
+  if (decider.rows[0]?.role === 'DEPARTMENT_HEAD') {
+    const holder = await pool.query(
+      `SELECT COALESCE(emp.department_id, al.department_id) AS department_id
+         FROM allocations al
+         LEFT JOIN users emp ON emp.id = al.employee_id
+        WHERE al.id = $1`,
+      [request.allocation_id]
+    );
+    if (!holder.rows[0]?.department_id || holder.rows[0].department_id !== decider.rows[0].department_id) {
+      throw new AllocationError('You can only approve transfers for assets held within your own department.');
+    }
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -304,8 +398,12 @@ module.exports = {
   listAllocationsForAsset,
   listOverdueAllocations,
   listUpcomingReturns,
+  listMyAllocations,
+  listAllocationsForMyDepartment,
   allocateAsset,
   returnAsset,
+  requestReturn,
+  listReturnRequests,
   requestTransfer,
   listTransferRequests,
   decideTransfer,

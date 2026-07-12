@@ -87,6 +87,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_allocations_one_active_per_asset
   ON allocations(asset_id) WHERE status = 'ACTIVE';
 CREATE INDEX IF NOT EXISTS idx_allocations_asset ON allocations(asset_id);
 
+ALTER TABLE allocations ADD COLUMN IF NOT EXISTS return_requested_at TIMESTAMPTZ;
+ALTER TABLE allocations ADD COLUMN IF NOT EXISTS return_requested_by UUID REFERENCES users(id);
+
 CREATE TABLE IF NOT EXISTS transfer_requests (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   asset_id          UUID NOT NULL REFERENCES assets(id),
